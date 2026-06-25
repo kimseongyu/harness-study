@@ -7,9 +7,11 @@
 ## 1. 프로젝트 프로필 (Project Profile)
 
 ### 1.1 주제
+
 - **주제:** React Native 모바일 화면에서 Chrome 공룡 게임(Chrome Dino Game)을 렌더링하고 원활하게 조작 및 플레이할 수 있는 크로스 플랫폼 어플리케이션 구축.
 
 ### 1.2 핵심 기술 스택 및 의존성 버전 (package.json 기준)
+
 - **React:** `19.2.3`
 - **React Native:** `0.86.0`
 - **Safe Area:** `react-native-safe-area-context` (`^5.5.2`)
@@ -20,7 +22,9 @@
   - Metro (번들러): `0.86.0`
 
 ### 1.3 표준 폴더 구조 (Standard Directory Structure)
+
 에이전트는 코드 및 컴포넌트를 추가할 때 아래의 구조를 반드시 준수해야 합니다.
+
 ```text
 harness-study/
 ├── .agents/
@@ -43,6 +47,7 @@ harness-study/
 ## 2. 에이전트 핵심 행동 지침 (Behavior Rules)
 
 ### Rule 2.1: 컴포넌트 추가 시 자체 명세서 작성 의무
+
 개발 과정에서 `src/components/` 또는 `src/screens/` 폴더에 새로운 컴포넌트를 생성하거나 수정/삭제할 때, **해당 컴포넌트 폴더 내부에 모듈의 정보와 인터페이스가 담긴 마크다운 파일**을 생성, 수정 또는 삭제해야 합니다.
 
 - **컴포넌트 문서화 규칙:**
@@ -51,6 +56,7 @@ harness-study/
   3. 만약 컴포넌트가 삭제되면 매핑된 마크다운 파일도 반드시 함께 삭제해야 합니다.
 
 ### Rule 2.2: 코드 일관성 및 검증 강제화 (Lint & Test)
+
 에이전트가 코드 생성, 변경 또는 버그 수정을 완료한 직후에는 **반드시 검증 스크립트를 실행**하여 코드 일관성과 동작 무결성을 점검해야 합니다.
 
 - **실행해야 할 명령어:**
@@ -59,7 +65,12 @@ harness-study/
 - **조치 요령:**
   - 린트 에러나 테스트 실패가 발생하는 경우, 작업을 마무리하기 전에 해당 오류를 해결하는 수정 코드를 작성 및 반영해야 합니다.
 
+### Rule 2.3: 기능 단위 Commit 진행
+
+에이전트가 작성한 코드는 기능 단위로 묶어서 Commit을 진행해야 합니다.
+
 ---
 
 ## 3. 에이전트 협업 모델 (Multi-Agent Protocol)
+
 - 에이전트는 기획, 개발, 평가 에이전트의 역할로 나뉘어 있으며 상호작용합니다. 자세한 협업 규격은 [docs/harness-engineering/architecture/agent_collaboration.md](file:///Users/sun925/Desktop/Git/harness-study/docs/harness-engineering/architecture/agent_collaboration.md) 문서를 참고하십시오.
