@@ -1,165 +1,115 @@
-# 시스템 아키텍처 및 통신 브릿지 설계서
+# 시스템 아키텍처 설계서 (Native)
 
-이 문서는 React Native(Native Realm)와 WebView(Web Realm)로 분리된 하이브리드 어플리케이션 아키텍처의 상세 설계서입니다. 두 영역 간의 책임 격리, 통신 프로토콜 규격 및 데이터 흐름을 정의합니다.
+이 문서는 Webview를 배제하고 React Native 네이티브 영역(Native Realm)에서 각 게임 요소들을 컴포넌트로 완전히 분리한 단독 구동형 게임 시스템의 상세 설계서입니다. 컴포넌트 간의 결합성 제어, 렌더링 파이프라인, 입력 제어 및 고성능 갱신 설계를 정의합니다.
 
 ---
 
 ## 1. 전체 아키텍처 레이어
 
-모바일 환경에서의 안정적인 구동과 독립적 검증(Testing Harness)이 가능하도록 관심사 분리(Separation of Concerns) 원칙을 적용하였습니다.
+모바일 환경에서의 최고 수준의 렌더링 반응성(저지연)과 독립적 검증(Testing Harness)이 가능하도록 관심사 분리(Separation of Concerns) 원칙을 적용하였습니다.
 
 ```text
-+-------------------------------------------------------------+
-| 1. React Native Application Container (Native Layer)         |
-|    - App.tsx, GameScreen.tsx                                |
-|    - App State, AsyncStorage (Highscore), Gesture Detection |
-+-------------------------------------------------------------+
-                              ||  (Native Bridge)
-                              \/
-+-------------------------------------------------------------+
-| 2. Hybrid Communication Bridge (Interface Layer)            |
-|    - WebView API (injectJavaScript, onMessage)             |
-|    - Message Serialization / Deserialization & Dispatcher   |
-+-------------------------------------------------------------+
-                              ||  (Web Context)
-                              \/
-+-------------------------------------------------------------+
-| 3. Chrome Dino Game Engine (Web Canvas Layer)               |
-|    - index.html, dino.js, main.css                          |
-|    - Canvas Renderer, Sprite Animator, Game Physics Engine  |
-+-------------------------------------------------------------+
++---------------------------------------------------------------+
+| 1. React Native Application Container (Native UI Layer)       |
+|    - App.tsx, GameScreen.tsx                                  |
+|    - App State, AsyncStorage (Highscore), Gesture Detection   |
++---------------------------------------------------------------+
+                               || (State Binding / Callbacks)
+                               \/
++---------------------------------------------------------------+
+| 2. Unified Game Loop Hook (Engine Layer)                      |
+|    - useGameLoop.ts                                           |
+|    - requestAnimationFrame Loop                               |
+|    - Physics Update, Collision Detector, Spawner & Scorer     |
++---------------------------------------------------------------+
+                               || (Props / Absolute Rendering)
+                               \/
++---------------------------------------------------------------+
+| 3. Chrome Dino Game Component Array (Native Drawing Layer)    |
+|    - Dino.tsx, Obstacle.tsx, Ground.tsx, Cloud.tsx            |
+|    - M3 Typography, Vibration Haptic Feedback, Pixel Art Views|
++---------------------------------------------------------------+
 ```
 
 ---
 
-## 2. WebView 통합 및 최적화 전략
+## 2. 네이티브 렌더링 및 해상도 최적화 전략
 
-모바일 네이티브 화면처럼 느껴지게 하기 위해 웹뷰 컴포넌트에 특화된 스타일링 및 네이티브 하드웨어 가속 설정이 필수적입니다.
+모바일 네이티브 화면에 최적화된 그래픽 표현과 레이아웃 배치 전략입니다.
 
-### 2.1 Viewport 및 스케일 제어
-웹뷰 내부 HTML 소스의 메타 태그를 모바일 뷰포트에 맞게 강제 잠금 처리하여 불필요한 확대/축소 및 더블 탭 제스처 간섭을 원천 차단합니다.
-```html
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-```
+### 2.1 뷰포트 비율 스케일링 (Viewport Ratio Scaling)
+- **표준 해상도:** 게임 내부 엔진은 가로 `600px`, 세로 `200px` 규격을 가상의 좌표 공간(Virtual Coord Space)으로 설정하여 구동됩니다.
+- **스케일 비율(Scale Factor) 동적 계산:**
+  - 화면 컨테이너 너비(`containerWidth`)에 맞춰 스케일 팩터 $S = \frac{\text{containerWidth}}{600}$를 동적 도출합니다.
+  - 게임 내의 모든 좌표(공룡 $Y$, 장애물 $X$ 등)와 컴포넌트의 크기(width, height)는 이 스케일 팩터 $S$를 곱하여 최종 픽셀 좌표 및 크기로 변환되어 렌더링됩니다.
+  - 이를 통해 해상도가 다른 다양한 안드로이드 및 iOS 디바이스 환경에서 비주얼이 깨지지 않고 동일한 구도와 비율을 균일하게 보장합니다.
 
-### 2.2 로컬 에셋(Local Asset) 및 오프라인 구동
-- **구현 방식:** 외부 웹 호스트 서버에 연결하지 않고, 웹 리소스(HTML, CSS, JS, Sprite Image, Audio)를 React Native 앱의 번들(Android: `android/app/src/main/assets`, iOS: Xcode App Bundle) 내부 로컬 경로에 포함시켜 구동합니다.
-- **성능 이점:** 네트워크 지연 시간이 0ms가 되며 비행기 모드에서도 완벽히 구동됩니다.
+### 2.2 픽셀 아트 컴포넌트 분리 (Pixel Art Views)
+- 이미지 에셋을 외부 파일로 불러오는 대신, React Native의 절대 좌표(`<View style={{ position: 'absolute' }}>`)들을 조합하여 픽셀 스타일의 스프라이트 그래픽을 구현합니다.
+- HTML Canvas에서 그리던 T-Rex, Cactus, Pterodactyl의 세부 형상 사각형 배열을 컴포넌트 내부에 내장하여 렌더링을 처리함으로써, 별도의 이미지 로딩 지연이 없고 높은 디스플레이 밀도(PPI)에서도 매우 깔끔한 픽셀 선명도를 유지합니다.
 
 ---
 
-## 3. React Native - WebView 양방향 통신 Bridge 설계
+## 3. unified Game Loop 및 상태 관리 흐름
 
-두 실행 컨텍스트 간 데이터 교환은 비동기 메시지 패싱(Asynchronous Message Passing) 메커니즘을 사용합니다.
+게임 구동 상태의 변경 흐름은 전적으로 `useGameLoop` Hook 내에서 `requestAnimationFrame`을 통해 통제됩니다.
 
 ```mermaid
-sequenceDiagram
-    participant RN as React Native (Native)
-    participant WV as WebView (JS Canvas)
-
-    Note over RN, WV: 1. 초기 로드 및 준비 완료
-    WV->>RN: ReactNativeWebView.postMessage({ type: "GAME_READY" })
-    RN->>WV: injectJavaScript("initGameConfiguration({ sound: true })")
-
-    Note over RN, WV: 2. 게임 중 실시간 상태 동기화
-    WV->>RN: ReactNativeWebView.postMessage({ type: "SCORE_UPDATE", payload: { score: 120 } })
-
-    Note over RN, WV: 3. 게임 종료 및 기록 저장
-    WV->>RN: ReactNativeWebView.postMessage({ type: "GAME_OVER", payload: { score: 540 } })
-    RN->>RN: AsyncStorage 최고점수 비교 및 기록 갱신
-    RN->>WV: injectJavaScript("updateHighscore(540)")
+graph TD
+    A[onTouchStart / Gesture Trigger] -->|Jump/Duck Input| B(useGameLoop Hook)
+    C[requestAnimationFrame Loop] -->|Frame Tick| D[Update Obstacles Position]
+    C -->|Frame Tick| E[Update Dino Physics Y / legState]
+    C -->|Frame Tick| F[Update Score / Difficulty Speed]
+    D & E --> G{AABB Collision Check}
+    G -->|Collision Detect| H[Trigger Vibration & Game Over Status]
+    G -->|No Collision| I[Render Screen Components]
+    I -->|Props Binding| J[Dino.tsx / Obstacle.tsx / Ground.tsx]
 ```
 
-### 3.1 Web -> Native (ReactNativeWebView.postMessage)
-웹뷰 컨텍스트 내에서 네이티브로 데이터(예: 점수, 게임 종료 상태)를 보낼 때 사용합니다.
-- **JS 코드:**
-  ```javascript
-  const sendMessage = (type, payload) => {
-    if (window.ReactNativeWebView) {
-      window.ReactNativeWebView.postMessage(JSON.stringify({ type, payload }));
-    }
-  };
-  ```
-
-### 3.2 Native -> Web (injectJavaScript)
-네이티브 컨텍스트에서 웹뷰의 글로벌 함수를 직접 호출하거나 전역 설정을 변경할 때 사용합니다.
-- **TypeScript 코드:**
-  ```typescript
-  const sendToWebView = (action: string, data: any) => {
-    const jsCode = `window.dispatchEvent(new CustomEvent('${action}', { detail: ${JSON.stringify(data)} })); true;`;
-    webViewRef.current?.injectJavaScript(jsCode);
-  };
-  ```
+### 3.1 렌더링 부하 최소화
+- React의 상태값(`useState`)을 매 프레임(16.6ms)마다 무차별적으로 업데이트하면 가상 DOM 연산 부하가 증가할 수 있습니다.
+- 따라서 빈번한 프레임 틱 연산(좌표, 윙 상태 등)은 React Native가 즉각 리렌더링하도록 훅 내부에서 상태 묶음으로 제어하고, 가볍고 얕은 속성(Props)만을 최하위 렌더링 컴포넌트로 바인딩합니다.
+- 복잡한 렌더링 오버헤드를 막기 위해 스크롤 및 위치 연산은 스케일된 크기의 `left`, `top` 값으로 컴포넌트에 주입됩니다.
 
 ---
 
-## 4. 메시지 프로토콜 규격 (Message Interface Specification)
+## 4. 모듈 인터페이스 규격 (Component Interface Specification)
 
-하네스 검증 시 주고받는 JSON 스키마는 아래 명세를 엄격히 지켜야 합니다.
+### 4.1 `useGameLoop` Output Props
+- **`score`**: `number` (실시간 누적 점수)
+- **`gameStatus`**: `'IDLE' | 'PLAYING' | 'GAMEOVER'`
+- **`dinoY`**: `number` (공룡의 가상 Y 좌표)
+- **`isDucking`**: `boolean` (숙이기 상태 여부)
+- **`legState`**: `number` (뛰기 애니메이션 발 상태, 0 또는 1)
+- **`obstacles`**: `Array<ObstacleData>` (현재 활성화된 장애물 배열)
+- **`resetGame`**: `() => void` (게임 초기화 함수)
+- **`triggerJump`**: `() => void` (점프 지시 함수)
+- **`setDucking`**: `(ducking: boolean) => void` (숙이기 제어 함수)
 
-### 4.1 WebView -> React Native 메시지
+### 4.2 `Dino` Component Props
+- **`y`**: `number` (스케일 적용 전 가상 Y 좌표)
+- **`isDucking`**: `boolean`
+- **`legState`**: `number`
+- **`isJumping`**: `boolean`
+- **`scale`**: `number` (스케일 팩터)
+- **`groundY`**: `number` (스케일 적용 전 가상 지면 Y 좌표)
 
-1. **게임 준비 완료 알림 (`GAME_READY`)**
-   - **설명:** 웹뷰 내부의 DOM 및 게임 에셋 로드가 완료되어 입력 대기 상태임을 네이티브에 보고.
-   - **구조:** `{ "type": "GAME_READY" }`
-
-2. **실시간 점수 보고 (`SCORE_UPDATE`)**
-   - **설명:** 점수가 100점 단위로 증가할 때마다 네이티브에 최신 스코어 전달.
-   - **구조:**
-     ```json
-     {
-       "type": "SCORE_UPDATE",
-       "payload": {
-         "score": 200
-       }
-     }
-     ```
-
-3. **게임 오버 (`GAME_OVER`)**
-   - **설명:** 장애물 충돌 시 게임 오버 상태를 보고하고 최종 점수 전송.
-   - **구조:**
-     ```json
-     {
-       "type": "GAME_OVER",
-       "payload": {
-         "score": 870,
-         "playTimeSeconds": 45
-       }
-     }
-     ```
-
-### 4.2 React Native -> WebView 메시지
-
-1. **설정 동기화 (`SYNC_SETTINGS`)**
-   - **설명:** 네이티브 환경설정(사운드 온/오프, 조작 난이도 변경 등)을 웹뷰에 주입.
-   - **구조:**
-     ```json
-     {
-       "action": "SYNC_SETTINGS",
-       "data": {
-         "soundEnabled": true,
-         "vibrationEnabled": false
-       }
-     }
-     ```
-
-2. **최고 기록 업데이트 (`UPDATE_HIGHSCORE`)**
-   - **설명:** 디바이스 내에 보관된 유저의 영구 최고 기록을 웹뷰에 갱신하여 화면 상단에 렌더링하도록 지시.
-   - **구조:**
-     ```json
-     {
-       "action": "UPDATE_HIGHSCORE",
-       "data": {
-         "highscore": 1420
-       }
-     }
-     ```
+### 4.3 `Obstacle` Component Props
+- **`type`**: `'CACTUS' | 'BIRD'`
+- **`x`**: `number` (가상 X 좌표)
+- **`y`**: `number` (가상 Y 좌표)
+- **`width`**: `number` (가상 넓이)
+- **`height`**: `number` (가상 높이)
+- **`wingState`**: `number`
+- **`scale`**: `number`
 
 ---
 
 ## 5. 장애 대응 및 안정성 보장 설계 (Fault Tolerance)
 
-1. **웹뷰 비정상 종료 (Webview Crash) 감지:**
-   - React Native WebView의 `onRenderProcessGone` 프로프를 활용하여 웹뷰 렌더링 엔진 메모리 누수나 크래시를 감지하고, 유저에게 "게임 재시도" UI를 Native 단에서 긴급 팝업으로 노출하고 웹뷰를 강제 갱신(Reload)합니다.
-2. **양방향 통신 실패 예외 처리:**
-   - 만약 `postMessage` 전달 중 직렬화 오류가 발생할 경우를 감안하여 웹뷰 내부에서 `try-catch` 블록으로 래핑하고, 실패 로그를 웹 내부 `console.error`로 내보내 테스트 하네스 감지 시스템에 기록합니다.
+1. **프레임 유실 감지 및 델타 시간 보정:**
+   - 렌더링 루프 실행 시 프레임 드롭(FPS 저하)이 발생할 경우, 물리 연산 속도가 급격히 느려지거나 장애물을 뚫고 지나가는 문제가 발생할 수 있습니다.
+   - 프레임 계산 시 델타 시간(Delta Time - 이전 프레임과의 시간 간격)을 계산하여 프레임당 이동 픽셀을 보정(Time-based Physics)함으로써 프레임 레이트가 변해도 공룡과 장애물의 이동 속도 일관성을 유지합니다.
+2. **배경 스크롤 순환 정합성 검증:**
+   - 무한 횡스크롤 처리 시 누적 연산으로 인해 지면의 좌표 값이 무한히 마이너스로 가면서 부동 소수점 에러가 발생할 수 있습니다.
+   - 지면 점(dot) 스크롤 좌표가 화면 폭 크기를 벗어날 때마다 모듈러 연산(`% canvasWidth`)을 사용하여 한정된 메모리 내부에서 위치 좌표를 안전하게 순환시킵니다.

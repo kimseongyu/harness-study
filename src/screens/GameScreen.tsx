@@ -1,33 +1,32 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   SafeAreaView,
   Switch,
-  TouchableOpacity,
+  GestureResponderEvent,
 } from 'react-native';
 import { storageService } from '../services/storageService';
-import { validateBridgeMessage } from '../utils/bridgeValidator';
-import { BridgeDebugPanel } from '../components/BridgeDebugPanel';
-import { DINO_HTML } from '../assets/dinoHtml';
-
-// Dynamic import to prevent crash if react-native-webview is not installed
-let WebView: any = null;
-try {
-  WebView = require('react-native-webview').WebView;
-} catch (e) {
-  // Webview not installed yet
-}
+import { validateGameEvent } from '../utils/bridgeValidator';
+import { GameDebugPanel } from '../components/GameDebugPanel';
+import { useGameLoop } from '../hooks/useGameLoop';
+import { Dino } from '../components/Dino/Dino';
+import { Obstacle } from '../components/Obstacle/Obstacle';
+import { Ground } from '../components/Ground/Ground';
+import { Cloud } from '../components/Cloud/Cloud';
 
 export function GameScreen() {
-  const [score, setScore] = useState(0);
   const [highscore, setHighscore] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [vibrationEnabled, setVibrationEnabled] = useState(true);
-  const [gameStatus, setGameStatus] = useState<'IDLE' | 'PLAYING' | 'GAMEOVER'>('IDLE');
-  
-  const webViewRef = useRef<any>(null);
+
+  // Layout measurements for scaling
+  const [containerWidth, setContainerWidth] = useState(0);
+  const scale = containerWidth > 0 ? containerWidth / 600 : 1;
+
+  // Touch start coordinates to detect swipe down
+  const touchStartYRef = useRef(0);
 
   // Load highscore on mount
   useEffect(() => {
@@ -38,74 +37,97 @@ export function GameScreen() {
     loadHighscore();
   }, []);
 
-  // Sync settings and highscore to WebView
-  const syncToWebView = () => {
-    if (!webViewRef.current) return;
-    
-    // 1. Sync settings
-    const settingsCode = `
-      window.dispatchEvent(new CustomEvent('SYNC_SETTINGS', {
-        detail: {
-          soundEnabled: ${soundEnabled},
-          vibrationEnabled: ${vibrationEnabled}
-        }
-      }));
-      true;
-    `;
-    webViewRef.current.injectJavaScript(settingsCode);
+  const handleGameOver = useCallback(async (finalScore: number) => {
+    // Save highscore
+    const didUpdate = await storageService.saveHighScore(finalScore);
+    if (didUpdate) {
+      const newHigh = await storageService.getHighScore();
+      setHighscore(newHigh);
+    }
+  }, []);
 
-    // 2. Sync highscore
-    const highscoreCode = `
-      window.dispatchEvent(new CustomEvent('UPDATE_HIGHSCORE', {
-        detail: {
-          highscore: ${highscore}
-        }
-      }));
-      true;
-    `;
-    webViewRef.current.injectJavaScript(highscoreCode);
+  const handleScoreCheckpoint = useCallback((checkpointScore: number) => {
+    // Score checkpoint callback (vibration/logging)
+    console.log(`Score Checkpoint reached: ${checkpointScore}`);
+  }, []);
+
+  // Connect native game loop
+  const {
+    score,
+    gameStatus,
+    dinoY,
+    isDucking,
+    legState,
+    obstacles,
+    currentFrame,
+    speed,
+    resetGame,
+    triggerJump,
+    setDucking,
+  } = useGameLoop({
+    soundEnabled,
+    vibrationEnabled,
+    highscore,
+    onGameOver: handleGameOver,
+    onScoreCheckpoint: handleScoreCheckpoint,
+  });
+
+  // Touch handlers for Native Gestures
+  const handleTouchStart = (event: GestureResponderEvent) => {
+    const touch = event.nativeEvent.touches[0];
+    if (touch) {
+      touchStartYRef.current = touch.pageY;
+    }
+    // Default action is jump (or start/restart game)
+    triggerJump();
   };
 
-  // Sync settings whenever they change
-  useEffect(() => {
-    syncToWebView();
-  }, [soundEnabled, vibrationEnabled, highscore]);
+  const handleTouchMove = (event: GestureResponderEvent) => {
+    const touch = event.nativeEvent.touches[0];
+    if (touch && gameStatus === 'PLAYING') {
+      const diffY = touch.pageY - touchStartYRef.current;
+      if (diffY > 30) {
+        // Swipe Down -> Duck
+        setDucking(true);
+      }
+    }
+  };
 
-  // Handle incoming bridge messages
-  const handleBridgeMessage = async (messageString: string) => {
-    const validated = validateBridgeMessage(messageString);
+  const handleTouchEnd = () => {
+    // Stop ducking on release
+    setDucking(false);
+  };
+
+  // Harness event simulation (Debug Panel interface support)
+  const handleSimulateEvent = async (event: any) => {
+    const validated = validateGameEvent(event);
     if (!validated) return;
 
     switch (validated.type) {
       case 'GAME_READY':
-        setGameStatus('IDLE');
-        syncToWebView();
+        resetGame();
         break;
 
       case 'SCORE_UPDATE':
-        setScore(validated.payload.score);
-        setGameStatus('PLAYING');
+        handleScoreCheckpoint(validated.payload.score);
         break;
 
       case 'GAME_OVER':
-        setScore(validated.payload.score);
-        setGameStatus('GAMEOVER');
-        
-        // Save highscore
-        const didUpdate = await storageService.saveHighScore(validated.payload.score);
-        if (didUpdate) {
-          const newHigh = await storageService.getHighScore();
-          setHighscore(newHigh);
-        }
+        handleGameOver(validated.payload.score);
         break;
     }
+  };
+
+  const onLayout = (event: any) => {
+    const { width } = event.nativeEvent.layout;
+    setContainerWidth(width);
   };
 
   return (
     <SafeAreaView style={styles.container}>
       {/* 1. Header (M3 Card style Scoreboard) */}
       <View style={styles.header}>
-        <Text style={styles.title}>T-REX RUNNER</Text>
+        <Text style={styles.title}>T-REX RUNNER (NATIVE)</Text>
         <View style={styles.scoreContainer}>
           <View style={styles.badge}>
             <Text style={styles.badgeText}>HI {String(highscore).padStart(5, '0')}</Text>
@@ -118,34 +140,68 @@ export function GameScreen() {
         </View>
       </View>
 
-      {/* 2. Webview / Mockup Render Window */}
-      <View style={styles.gameWindow}>
-        {WebView ? (
-          <WebView
-            ref={webViewRef}
-            source={{ html: DINO_HTML }}
-            onMessage={(event: any) => handleBridgeMessage(event.nativeEvent.data)}
-            style={styles.webview}
-            scrollEnabled={false}
-            bounces={false}
-            overScrollMode="never"
-            originWhitelist={['*']}
-            javaScriptEnabled={true}
-            domStorageEnabled={true}
-            allowFileAccess={true}
-            allowingReadAccessToURL="file://"
-          />
+      {/* 2. Native Play Window */}
+      <View
+        style={styles.gameWindow}
+        onLayout={onLayout}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
+        {containerWidth > 0 ? (
+          <View style={styles.gameContainer}>
+            {/* Background elements */}
+            <Cloud currentFrame={currentFrame} scale={scale} containerWidth={containerWidth} />
+            
+            {/* Ground */}
+            <Ground
+              speed={gameStatus === 'PLAYING' ? speed : 0.2}
+              currentFrame={currentFrame}
+              scale={scale}
+              containerWidth={containerWidth}
+            />
+
+            {/* Dino Character */}
+            <Dino
+              y={dinoY}
+              isDucking={isDucking}
+              legState={legState}
+              isJumping={dinoY < 130}
+              scale={scale}
+            />
+
+            {/* Dynamic Obstacles */}
+            {obstacles.map((obs) => (
+              <Obstacle
+                key={obs.id}
+                type={obs.type}
+                x={obs.x}
+                y={obs.y}
+                width={obs.width}
+                height={obs.height}
+                wingState={obs.wingState}
+                scale={scale}
+              />
+            ))}
+
+            {/* Static UI States */}
+            {gameStatus === 'GAMEOVER' && (
+              <View style={styles.overlayContainer}>
+                <Text style={styles.overlayTitle}>GAME OVER</Text>
+                <Text style={styles.overlaySub}>TAP TO RESTART</Text>
+              </View>
+            )}
+
+            {gameStatus === 'IDLE' && (
+              <View style={styles.overlayContainer}>
+                <Text style={styles.overlayTitle}>CHROME DINO</Text>
+                <Text style={styles.overlaySub}>TAP TO START JUMP</Text>
+              </View>
+            )}
+          </View>
         ) : (
           <View style={styles.fallbackContainer}>
-            <Text style={styles.fallbackTitle}>⚠️ WebView Not Mounted</Text>
-            <Text style={styles.fallbackText}>
-              react-native-webview 모듈이 설치되어 있지 않습니다.
-              하단 시뮬레이터 패널을 사용해 브릿지 수신 이벤트를 테스트해보세요.
-            </Text>
-            <View style={styles.mockupStatus}>
-              <Text style={styles.mockupStatusText}>게임 상태: {gameStatus}</Text>
-              <Text style={styles.mockupStatusText}>최근 점수: {score}</Text>
-            </View>
+            <Text style={styles.fallbackText}>Measuring Layout...</Text>
           </View>
         )}
       </View>
@@ -153,7 +209,7 @@ export function GameScreen() {
       {/* 3. Settings Control Sheet (M3 Style Rounded Sheet) */}
       <View style={styles.settingsSheet}>
         <Text style={styles.sheetTitle}>게임 설정</Text>
-        
+
         <View style={styles.settingItem}>
           <Text style={styles.settingText}>효과음 활성화</Text>
           <Switch
@@ -176,7 +232,7 @@ export function GameScreen() {
       </View>
 
       {/* 4. Harness Debug Simulation Controller */}
-      <BridgeDebugPanel onSimulateMessage={handleBridgeMessage} />
+      <GameDebugPanel onSimulateEvent={handleSimulateEvent} />
     </SafeAreaView>
   );
 }
@@ -196,7 +252,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
   },
   title: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 'bold',
     fontFamily: 'monospace',
     color: '#1a1a1a',
@@ -232,42 +288,38 @@ const styles = StyleSheet.create({
     borderColor: '#cbd2d9',
     overflow: 'hidden',
   },
-  webview: {
+  gameContainer: {
     flex: 1,
+    position: 'relative',
   },
   fallbackContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 24,
-    backgroundColor: '#ffffff',
-  },
-  fallbackTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#c53929',
-    marginBottom: 8,
-    fontFamily: 'monospace',
   },
   fallbackText: {
+    fontFamily: 'monospace',
     fontSize: 12,
     color: '#6c7784',
-    textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 20,
   },
-  mockupStatus: {
-    backgroundColor: '#f5f5f5',
-    padding: 12,
-    borderRadius: 8,
-    width: '100%',
+  overlayContainer: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    pointerEvents: 'none',
   },
-  mockupStatusText: {
-    fontSize: 12,
+  overlayTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
     fontFamily: 'monospace',
-    color: '#333333',
-    lineHeight: 18,
+    color: '#555555',
+    marginBottom: 8,
+  },
+  overlaySub: {
+    fontSize: 10,
+    fontFamily: 'monospace',
+    color: '#6c7784',
   },
   settingsSheet: {
     backgroundColor: '#ffffff',

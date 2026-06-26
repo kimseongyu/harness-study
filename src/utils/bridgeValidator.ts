@@ -1,19 +1,22 @@
-export interface BridgeMessage {
+export interface GameEvent {
   type: 'GAME_READY' | 'SCORE_UPDATE' | 'GAME_OVER';
   payload?: any;
 }
 
 /**
- * Safely parses and validates a JSON message string sent from the WebView.
- * Returns the parsed BridgeMessage object, or null if the message is invalid.
+ * Safely parses and validates a game event (either as an object or serialized JSON string).
+ * Returns the validated GameEvent object, or null if invalid.
  */
-export function validateBridgeMessage(jsonString: string): BridgeMessage | null {
+export function validateGameEvent(input: any): GameEvent | null {
   try {
-    const data = JSON.parse(jsonString);
+    let data = input;
+    if (typeof input === 'string') {
+      data = JSON.parse(input);
+    }
 
     // 1. Validate that the object exists and has a string 'type' field
     if (!data || typeof data.type !== 'string') {
-      console.warn('Bridge Validation Failure: Message or "type" field is missing.');
+      console.warn('Game Event Validation Failure: Message or "type" field is missing.');
       return null;
     }
 
@@ -25,26 +28,29 @@ export function validateBridgeMessage(jsonString: string): BridgeMessage | null 
 
       case 'SCORE_UPDATE':
         if (!data.payload || typeof data.payload.score !== 'number') {
-          console.warn('Bridge Validation Failure: SCORE_UPDATE expects a numeric "score" payload.');
+          console.warn('Game Event Validation Failure: SCORE_UPDATE expects a numeric "score" payload.');
           return null;
         }
         break;
 
       case 'GAME_OVER':
         if (!data.payload || typeof data.payload.score !== 'number') {
-          console.warn('Bridge Validation Failure: GAME_OVER expects a numeric "score" payload.');
+          console.warn('Game Event Validation Failure: GAME_OVER expects a numeric "score" payload.');
           return null;
         }
         break;
 
       default:
-        console.warn(`Bridge Validation Failure: Unknown message type "${data.type}".`);
+        console.warn(`Game Event Validation Failure: Unknown event type "${data.type}".`);
         return null;
     }
 
-    return data as BridgeMessage;
+    return data as GameEvent;
   } catch (error) {
-    console.error('Bridge Validation Failure: Failed to parse JSON message:', error);
+    console.error('Game Event Validation Failure: Failed to parse game event:', error);
     return null;
   }
 }
+
+// Keep the old function name alias for backwards compatibility during transition
+export const validateBridgeMessage = validateGameEvent;
