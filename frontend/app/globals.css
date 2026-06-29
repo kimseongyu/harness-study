@@ -1,1 +1,35 @@
 @import "tailwindcss";
+
+:root {
+  /* HSL Color Tokens */
+  --color-bg-base: hsl(224, 25%, 8%);       /* Sleek Deep Space Dark */
+  --color-bg-surface: hsl(224, 20%, 14%);   /* Card / Element Surface */
+  --color-bg-glass: rgba(30, 41, 59, 0.4);   /* Glassmorphism Background */
+  
+  --color-primary: hsl(263, 70%, 50%);       /* Royal Indigo / Violet */
+  --color-primary-hover: hsl(263, 80%, 60%);
+  --color-accent: hsl(190, 90%, 50%);        /* Neon Cyan for Accents */
+  
+  --color-text-primary: hsl(210, 40%, 98%);  /* Soft White */
+  --color-text-secondary: hsl(215, 20%, 65%);/* Muted Gray */
+  --color-error: hsl(0, 85%, 60%);           /* Vivid Crimson Red */
+
+  /* Visual Styles */
+  --border-radius-sm: 8px;
+  --border-radius-md: 16px;
+  --border-radius-lg: 24px;
+  
+  --glass-border: 1px solid rgba(255, 255, 255, 0.08);
+  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  --glass-blur: blur(12px);
+  
+  --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+body {
+  background-color: var(--color-bg-base);
+  color: var(--color-text-primary);
+  font-family: 'Inter', system-ui, sans-serif;
+  margin: 0;
+  padding: 0;
+}
