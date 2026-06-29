@@ -1,5 +1,25 @@
 {
   "project_name": "harness-study",
+  "engine": "antigravity-v2",
+  "sandbox": {
+    "readOnly": false,
+    "allowWritePaths": [
+      ".agents/",
+      "src/",
+      ".git/",
+      "ai/",
+      "frontend/",
+      "progress.md",
+      "log.md"
+    ],
+    "allowTerminalCommands": [
+      "git",
+      "npm",
+      "bash",
+      "docker",
+      "uv"
+    ]
+  },
   "environments": {
     "frontend": {
       "path": "./frontend",
