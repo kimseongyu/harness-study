@@ -1,0 +1,25 @@
+{
+  "project_name": "harness-study",
+  "environments": {
+    "frontend": {
+      "path": "./frontend",
+      "package_manager": "npm",
+      "test_runner": "jest",
+      "test_command": "npm run test",
+      "lint_command": "npm run lint"
+    },
+    "ai_server": {
+      "path": "./ai",
+      "package_manager": "uv",
+      "test_runner": "pytest",
+      "test_command": "uv run pytest"
+    }
+  },
+  "harness": {
+    "checklist_path": "./.agents/checklist.yml",
+    "requirements_path": "./.agents/requirements",
+    "apis_path": "./.agents/apis",
+    "designs_path": "./.agents/designs",
+    "max_tdd_loops": 5
+  }
+}
